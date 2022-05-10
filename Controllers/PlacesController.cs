@@ -1,16 +1,113 @@
+using System;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
+using StackExchange.Redis;
 
 namespace PlaceApi.Controllers
 {
+    /// <summary>
+    /// Endpoints to interact with redis bitfield which stores the canvas.
+    /// Colors within the canvas will be stored as integers defined by the INT_BIT_SIZE.
+    /// Size of the canvas will be determined by CANVAS WIDTH * CANVAS_HEIGHT
+    /// Bitfield will be stored under KEY
+    /// </summary>
     [ApiController]
     [Route("[controller]")]
     public class PlacesController : ControllerBase
     {
+        private IDatabase redis;
+        private const int CANVAS_WIDTH = 2;
+        private const int CANVAS_HEIGHT = 2;
+        private const string INT_BIT_SIZE = "u4";
+        private const string KEY = "canvas";
+
+        private Random random = new Random();
+
+        public PlacesController(IConnectionMultiplexer connection)
+        {
+            this.redis = connection.GetDatabase();
+        }
+
+        /// <summary>
+        /// Resets the canvas
+        /// </summary>
+        [HttpPost]
+        public async Task<ActionResult> ResetBitField()
+        {
+            this.redis.KeyDelete(KEY);
+
+            for (int x = 0; x < CANVAS_WIDTH; x++)
+            {
+                for (int y = 0; y < CANVAS_HEIGHT; y++)
+                {
+                    var n = random.Next(0, 15);
+
+                    Console.WriteLine(n);
+
+                    await this.SetBit(x, y, n);
+                }
+            }
+
+            return this.Ok();
+        }
+
+        /// <summary>
+        /// Updates the pixel at a given location offset in the bitfield
+        /// </summary>
+        /// <param name="x">The x coordinate</param>
+        /// <param name="y">The y coordinate</param>
+        /// <param name="value">The value</param>
+        /// <returns></returns>
+        [HttpPost("draw")]
+        public async Task<ActionResult> Draw(int x, int y, byte value)
+        {
+            // TODO: This could be invalid if we ever changed the size of the integer. 15 is the max for 4-bit integer.
+            if (value > 15)
+                return this.BadRequest($"Invalid value. Value must be {INT_BIT_SIZE}-bit integer");
+
+            bool invalidXCoordinate = x > CANVAS_WIDTH - 1;
+            bool invalidYCoordinate = y > CANVAS_HEIGHT - 1;
+
+            if (invalidXCoordinate || invalidYCoordinate)
+                return this.BadRequest(
+                    "Invalid coordinates: " +
+                    $"{(invalidXCoordinate ? $"X coordinate '{x}' exceeds the bounds of '0' -> '{CANVAS_WIDTH - 1}'. " : null)}" +
+                    $"{(invalidYCoordinate ? $"Y coordinate '{y}' exceeds the bounds of '0' -> '{CANVAS_HEIGHT - 1}'. " : null)}");
+
+            await this.SetBit(x, y, value);
+
+            return this.Ok();
+        }
+
+        /// <summary>
+        /// https://redis.io/commands/bitfield/
+        /// Note, if the offset is prefixed with a # character, the specified offset is multiplied by the integer encoding's width.
+        /// </summary>
+        /// <param name="x">The x coordinate to calculate the offset.</param>
+        /// <param name="y">The y coordinate to calculate the offset.</param>
+        /// <param name="value">The integer value to set.</param>
+        /// <returns></returns>
+        private async Task SetBit(int x, int y, int value)
+        {
+            var offset = (2 * y) + x;
+
+            await this.redis.ExecuteAsync("BITFIELD", (RedisKey)KEY, "SET", INT_BIT_SIZE, $"#{offset}", value);
+        }
+
+        /// <summary>
+        /// Retrieves entire bitfield from position 0 -> CANVAS_WIDTH + 1 (+1 because we are including 0 position)
+        /// GETRANGE <KEY> <start> <end>
+        /// Tool can view base64 as binary and as 4 bit / 8 bit groups
+        /// https://cryptii.com/pipes/base64-to-binary
+        /// </summary>
         [HttpGet]
         public async Task<ActionResult> GetBitField()
         {
-            return this.Ok();
+            RedisResult result = await this.redis.ExecuteAsync("GETRANGE", (RedisKey)KEY, "0", CANVAS_WIDTH + 1);
+
+            byte[] byteArray = (RedisValue)result;
+
+            return this.Ok(byteArray);
         }
     }
 }
