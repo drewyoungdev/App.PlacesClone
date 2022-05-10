@@ -42,7 +42,7 @@ namespace PlaceApi.Controllers
                 {
                     var n = random.Next(0, 15);
 
-                    Console.WriteLine(n);
+                    Console.WriteLine($"Coordinate ({x}, {y}): {n}");
 
                     await this.SetBit(x, y, n);
                 }
@@ -96,9 +96,13 @@ namespace PlaceApi.Controllers
 
         /// <summary>
         /// Retrieves entire bitfield from position 0 -> CANVAS_WIDTH + 1 (+1 because we are including 0 position)
+        /// If Content-Type application/octet-stream is requested return
+        /// Else default to Base64 encoded byte array.
         /// GETRANGE <KEY> <start> <end>
-        /// Tool can view base64 as binary and as 4 bit / 8 bit groups
-        /// https://cryptii.com/pipes/base64-to-binary
+        /// https://cryptii.com/pipes/base64-to-binary Tool can view base64 as binary and as 4 bit / 8 bit groups
+        /// Examples below on how to split 8-bits into 4-bit integers:
+        /// https://stackoverflow.com/questions/55133430/how-to-split-a-byte-into-2-parts-and-read-it
+        /// https://pyra-handheld.com/boards/threads/splitting-an-8bit-variable-into-two-4bit.23388/
         /// </summary>
         [HttpGet]
         public async Task<ActionResult> GetBitField()
@@ -106,6 +110,9 @@ namespace PlaceApi.Controllers
             RedisResult result = await this.redis.ExecuteAsync("GETRANGE", (RedisKey)KEY, "0", CANVAS_WIDTH + 1);
 
             byte[] byteArray = (RedisValue)result;
+
+            if (Request.Headers.TryGetValue("Content-Type", out var contentType) && string.Equals(contentType, "application/octet-stream", StringComparison.OrdinalIgnoreCase))
+                return this.File(byteArray, "application/octet-stream");
 
             return this.Ok(byteArray);
         }
