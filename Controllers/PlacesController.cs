@@ -44,7 +44,7 @@ namespace PlaceApi.Controllers
 
                     Console.WriteLine($"Coordinate ({x}, {y}): {n}");
 
-                    await this.SetBit(x, y, n);
+                    await this.DrawTile(x, y, n);
                 }
             }
 
@@ -74,7 +74,7 @@ namespace PlaceApi.Controllers
                     $"{(invalidXCoordinate ? $"X coordinate '{x}' exceeds the bounds of '0' -> '{CANVAS_WIDTH - 1}'. " : null)}" +
                     $"{(invalidYCoordinate ? $"Y coordinate '{y}' exceeds the bounds of '0' -> '{CANVAS_HEIGHT - 1}'. " : null)}");
 
-            await this.SetBit(x, y, value);
+            await this.DrawTile(x, y, value);
 
             return this.Ok();
         }
@@ -87,7 +87,7 @@ namespace PlaceApi.Controllers
         /// <param name="y">The y coordinate to calculate the offset.</param>
         /// <param name="value">The integer value to set.</param>
         /// <returns></returns>
-        private async Task SetBit(int x, int y, int value)
+        private async Task DrawTile(int x, int y, int value)
         {
             var offset = (2 * y) + x;
 
